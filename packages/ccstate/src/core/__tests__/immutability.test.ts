@@ -122,4 +122,58 @@ describe('immutability protection (#182)', () => {
 
     store.get(verifyDeepFreeze$);
   });
+
+  it('should freeze non-enumerable properties with nested objects', () => {
+    const store = createStore();
+
+    // Create an object with non-enumerable property containing nested object
+    const objWithHidden = { public: { value: 1 } };
+    Object.defineProperty(objWithHidden, 'hidden', {
+      value: { nested: { data: 2 } },
+      enumerable: false, // Non-enumerable
+      writable: true,
+      configurable: true,
+    });
+
+    const state$ = state(objWithHidden, {
+      debugLabel: 'nonEnumState$',
+    });
+
+    const result = store.get(state$);
+
+    // Verify public property is frozen (baseline)
+    expect(() => {
+      result.public.value = 999;
+    }).toThrow();
+
+    // Critical: Verify non-enumerable property is also frozen
+    // This test ensures Reflect.ownKeys() is used instead of Object.keys()
+    const hidden = (result as unknown as { hidden: { nested: { data: number } } }).hidden;
+    expect(() => {
+      hidden.nested.data = 999;
+    }).toThrow();
+  });
+
+  it('should freeze Symbol properties with nested objects', () => {
+    const store = createStore();
+
+    const symKey = Symbol('secretData');
+    const objWithSymbol = {
+      public: { value: 1 },
+      [symKey]: { nested: { data: 2 } },
+    };
+
+    const state$ = state(objWithSymbol, {
+      debugLabel: 'symbolState$',
+    });
+
+    const result = store.get(state$);
+
+    // Verify Symbol property is frozen
+    // This test ensures Reflect.ownKeys() captures Symbol keys (Object.keys() wouldn't)
+    const symbolValue = (result as Record<symbol, { nested: { data: number } }>)[symKey];
+    expect(() => {
+      symbolValue.nested.data = 999;
+    }).toThrow();
+  });
 });

@@ -186,7 +186,8 @@ test('get read deps', () => {
   const store = createDebugStore();
   const base$ = state({ a: 1 });
   const derived$ = computed((get) => {
-    return Object.assign(get(base$), { b: 1 });
+    // Use spread operator instead of Object.assign to avoid mutating frozen object
+    return { ...get(base$), b: 1 };
   });
   expect(store.getReadDependencies(derived$)).toEqual([derived$]);
   store.get(derived$);
@@ -197,14 +198,20 @@ test('get should return value directly', () => {
   const store = createStore();
   const base$ = state({ a: 1 });
   const derived$ = computed((get) => {
-    return Object.assign(get(base$), { b: 1 });
+    // Use spread operator instead of Object.assign to avoid mutating frozen object
+    return { ...get(base$), b: 1 };
   });
 
   const b = store.get(derived$);
   store.set(base$, { a: 2 });
   expect(b).toEqual({ a: 1, b: 1 });
 
-  b.b = 2;
+  // With immutability protection, mutations are prevented
+  // This test now verifies that store values are protected
+  expect(() => {
+    (b as { b: number }).b = 2;
+  }).toThrow();
+
   expect(store.get(derived$)).property('a', 2);
   expect(store.get(derived$)).property('b', 1);
 });

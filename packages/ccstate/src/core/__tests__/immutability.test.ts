@@ -176,4 +176,45 @@ describe('immutability protection (#182)', () => {
       symbolValue.nested.data = 999;
     }).toThrow();
   });
+
+  it('should freeze function properties with nested objects', () => {
+    const store = createStore();
+
+    // Create a state with a function that has nested object properties
+    // This edge case, though rare, can occur in state management
+    const handler = function processData() {
+      return 42;
+    };
+    // Add metadata to the function (rare but possible)
+    (handler as { metadata?: { config: { value: number } } }).metadata = {
+      config: { value: 1 },
+    };
+
+    const stateWithFunction = {
+      data: { value: 10 },
+      handler,
+    };
+
+    const state$ = state(stateWithFunction, {
+      debugLabel: 'functionState$',
+    });
+
+    const result = store.get(state$);
+
+    // Verify regular data is frozen (baseline)
+    expect(() => {
+      result.data.value = 999;
+    }).toThrow();
+
+    // Critical: Verify function properties are also frozen
+    // This ensures MDN standard compliance: freezing functions and their properties
+    const resultHandler = result.handler as {
+      metadata?: { config: { value: number } };
+    };
+    expect(() => {
+      if (resultHandler.metadata) {
+        resultHandler.metadata.config.value = 999;
+      }
+    }).toThrow();
+  });
 });

@@ -60,9 +60,13 @@ function createFrozenSet<T>(set: Set<T>, cache: WeakSet<object>): Set<T> {
 
 /**
  * Check if a value should be frozen
+ *
+ * Note: Functions are also freezable per MDN standard
+ * Functions can have properties with nested objects that need freezing
  */
 function shouldFreeze(value: unknown): value is object {
-  if (value === null || typeof value !== 'object') {
+  // Accept both objects and functions
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) {
     return false;
   }
 
@@ -124,10 +128,16 @@ function deepFreezeImpl<T>(value: T, cache: WeakSet<object>): T {
   // - Reflect.ownKeys() returns ALL own property keys (enumerable + non-enumerable + Symbols)
   // - This prevents edge cases where nested objects in non-enumerable properties could be mutated
   //
+  // Why freeze functions (|| typeof propertyValue === 'function'):
+  // - Functions can have properties with nested objects (e.g., fn.metadata = { data: {...} })
+  // - Though rare in state management, freezing functions ensures 100% immutability
+  // - Matches MDN standard implementation exactly
+  //
   // Performance impact: ~5% slower than Object.keys(), but negligible in absolute terms (<1μs per object)
   Reflect.ownKeys(value).forEach((prop) => {
     const propertyValue = (value as Record<string | symbol, unknown>)[prop];
-    if (propertyValue && typeof propertyValue === 'object') {
+    // Freeze both objects and functions per MDN standard
+    if ((propertyValue && typeof propertyValue === 'object') || typeof propertyValue === 'function') {
       deepFreezeImpl(propertyValue, cache);
     }
   });

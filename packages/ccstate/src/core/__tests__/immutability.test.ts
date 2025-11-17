@@ -217,4 +217,72 @@ describe('immutability protection (#182)', () => {
       }
     }).toThrow();
   });
+
+  it('should prevent deletion of frozen Map methods', () => {
+    const store = createStore();
+    const map$ = state(new Map([['a', 1]]), {
+      debugLabel: 'deleteTestMap$',
+    });
+
+    const frozenMap = store.get(map$);
+
+    // Verify methods are frozen and cannot be deleted
+    expect(() => {
+      delete (frozenMap as Map<string, number> & { set?: unknown }).set;
+    }).toThrow();
+
+    // Verify methods cannot be reassigned
+    expect(() => {
+      (frozenMap as Map<string, number> & { set?: () => void }).set = () => {};
+    }).toThrow();
+  });
+
+  it('should freeze WeakMap and prevent mutations', () => {
+    const store = createStore();
+
+    const key1 = { id: 1 };
+    const key2 = { id: 2 };
+    const weakMap = new WeakMap<{ id: number }, string>([
+      [key1, 'value1'],
+      [key2, 'value2'],
+    ]);
+
+    const state$ = state({ cache: weakMap }, {
+      debugLabel: 'weakMapState$',
+    });
+
+    const result = store.get(state$);
+
+    // Verify WeakMap mutations are prevented
+    expect(() => {
+      result.cache.set({ id: 3 }, 'value3');
+    }).toThrow();
+
+    expect(() => {
+      result.cache.delete(key1);
+    }).toThrow();
+  });
+
+  it('should freeze WeakSet and prevent mutations', () => {
+    const store = createStore();
+
+    const obj1 = { id: 1 };
+    const obj2 = { id: 2 };
+    const weakSet = new WeakSet<{ id: number }>([obj1, obj2]);
+
+    const state$ = state({ refs: weakSet }, {
+      debugLabel: 'weakSetState$',
+    });
+
+    const result = store.get(state$);
+
+    // Verify WeakSet mutations are prevented
+    expect(() => {
+      result.refs.add({ id: 3 });
+    }).toThrow();
+
+    expect(() => {
+      result.refs.delete(obj1);
+    }).toThrow();
+  });
 });

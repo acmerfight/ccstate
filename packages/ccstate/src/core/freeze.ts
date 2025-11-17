@@ -18,44 +18,172 @@
 
 /**
  * Create a read-only wrapper for Map
+ *
+ * Implementation follows Immer's approach:
+ * 1. Freeze all nested values in the Map
+ * 2. Replace mutating methods using Object.defineProperties (prevents deletion/reassignment)
+ * 3. Freeze the Map object itself (additional protection layer)
+ *
+ * Reference: https://github.com/immerjs/immer/blob/main/src/utils/common.ts
  */
 function createFrozenMap<K, V>(map: Map<K, V>, cache: WeakSet<object>): Map<K, V> {
-  // Freeze all values in the Map
+  // Step 1: Freeze all values in the Map
   map.forEach((value) => {
     deepFreezeImpl(value, cache);
   });
 
-  // Replace mutating methods
+  // Step 2: Replace mutating methods using defineProperties
+  // This prevents both deletion and reassignment of these methods
   const throwError = () => {
     throw new TypeError('Cannot mutate a frozen Map');
   };
 
-  map.set = throwError as typeof map.set;
-  map.delete = throwError as typeof map.delete;
-  map.clear = throwError;
+  Object.defineProperties(map, {
+    set: {
+      value: throwError,
+      configurable: false, // Prevents deletion via 'delete map.set'
+      writable: false, // Prevents reassignment via 'map.set = ...'
+    },
+    delete: {
+      value: throwError,
+      configurable: false,
+      writable: false,
+    },
+    clear: {
+      value: throwError,
+      configurable: false,
+      writable: false,
+    },
+  });
+
+  // Step 3: Freeze the Map object itself (additional protection)
+  // Note: This still cannot prevent Map.prototype.set.call(map, ...) due to JavaScript limitations
+  Object.freeze(map);
 
   return map;
 }
 
 /**
  * Create a read-only wrapper for Set
+ *
+ * Implementation follows Immer's approach:
+ * 1. Freeze all nested values in the Set
+ * 2. Replace mutating methods using Object.defineProperties (prevents deletion/reassignment)
+ * 3. Freeze the Set object itself (additional protection layer)
+ *
+ * Reference: https://github.com/immerjs/immer/blob/main/src/utils/common.ts
  */
 function createFrozenSet<T>(set: Set<T>, cache: WeakSet<object>): Set<T> {
-  // Freeze all values in the Set
+  // Step 1: Freeze all values in the Set
   set.forEach((value) => {
     deepFreezeImpl(value, cache);
   });
 
-  // Replace mutating methods
+  // Step 2: Replace mutating methods using defineProperties
+  // This prevents both deletion and reassignment of these methods
   const throwError = () => {
     throw new TypeError('Cannot mutate a frozen Set');
   };
 
-  set.add = throwError as typeof set.add;
-  set.delete = throwError as typeof set.delete;
-  set.clear = throwError;
+  Object.defineProperties(set, {
+    add: {
+      value: throwError,
+      configurable: false, // Prevents deletion via 'delete set.add'
+      writable: false, // Prevents reassignment via 'set.add = ...'
+    },
+    delete: {
+      value: throwError,
+      configurable: false,
+      writable: false,
+    },
+    clear: {
+      value: throwError,
+      configurable: false,
+      writable: false,
+    },
+  });
+
+  // Step 3: Freeze the Set object itself (additional protection)
+  // Note: This still cannot prevent Set.prototype.add.call(set, ...) due to JavaScript limitations
+  Object.freeze(set);
 
   return set;
+}
+
+/**
+ * Create a read-only wrapper for WeakMap
+ *
+ * Note: WeakMap cannot be iterated, so we cannot freeze nested values.
+ * We only replace mutating methods similar to Map handling.
+ *
+ * WeakMap is less common in state management since keys must be objects
+ * and entries are automatically garbage collected.
+ */
+function createFrozenWeakMap<K extends object, V>(
+  weakMap: WeakMap<K, V>,
+  cache: WeakSet<object>,
+): WeakMap<K, V> {
+  // Cannot iterate WeakMap to freeze values (by design)
+  // WeakMap keys are weakly held and automatically garbage collected
+
+  const throwError = () => {
+    throw new TypeError('Cannot mutate a frozen WeakMap');
+  };
+
+  Object.defineProperties(weakMap, {
+    set: {
+      value: throwError,
+      configurable: false,
+      writable: false,
+    },
+    delete: {
+      value: throwError,
+      configurable: false,
+      writable: false,
+    },
+  });
+
+  Object.freeze(weakMap);
+
+  return weakMap;
+}
+
+/**
+ * Create a read-only wrapper for WeakSet
+ *
+ * Note: WeakSet cannot be iterated, so we cannot freeze nested values.
+ * We only replace mutating methods similar to Set handling.
+ *
+ * WeakSet is less common in state management since values must be objects
+ * and entries are automatically garbage collected.
+ */
+function createFrozenWeakSet<T extends object>(
+  weakSet: WeakSet<T>,
+  cache: WeakSet<object>,
+): WeakSet<T> {
+  // Cannot iterate WeakSet to freeze values (by design)
+  // WeakSet values are weakly held and automatically garbage collected
+
+  const throwError = () => {
+    throw new TypeError('Cannot mutate a frozen WeakSet');
+  };
+
+  Object.defineProperties(weakSet, {
+    add: {
+      value: throwError,
+      configurable: false,
+      writable: false,
+    },
+    delete: {
+      value: throwError,
+      configurable: false,
+      writable: false,
+    },
+  });
+
+  Object.freeze(weakSet);
+
+  return weakSet;
 }
 
 /**
@@ -114,6 +242,18 @@ function deepFreezeImpl<T>(value: T, cache: WeakSet<object>): T {
   // Handle Set: freeze values and replace mutating methods
   if (value instanceof Set) {
     return createFrozenSet(value, cache) as T;
+  }
+
+  // Handle WeakMap: replace mutating methods
+  // Note: Cannot freeze nested values since WeakMap is not iterable
+  if (value instanceof WeakMap) {
+    return createFrozenWeakMap(value, cache) as T;
+  }
+
+  // Handle WeakSet: replace mutating methods
+  // Note: Cannot freeze nested values since WeakSet is not iterable
+  if (value instanceof WeakSet) {
+    return createFrozenWeakSet(value, cache) as T;
   }
 
   // Freeze the object itself

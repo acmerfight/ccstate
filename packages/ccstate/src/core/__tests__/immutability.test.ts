@@ -218,59 +218,73 @@ describe('immutability protection (#182)', () => {
     }).toThrow();
   });
 
-  it('should handle TypedArray without crashing', () => {
+  it('should prevent Map methods deletion and reassignment', () => {
     const store = createStore();
-    const typedArrayState$ = state({
-      uint8: new Uint8Array([1, 2, 3]),
-      float32: new Float32Array([1.1, 2.2, 3.3]),
+    const map$ = state(new Map([['a', 1]]), {
+      debugLabel: 'methodProtectionMap$',
     });
 
-    // Should not throw when getting state with TypedArray
-    const result = store.get(typedArrayState$);
+    const frozenMap = store.get(map$);
 
-    // TypedArray values should be accessible
-    expect(result.uint8[0]).toBe(1);
-    expect(result.float32[2]).toBeCloseTo(3.3);
+    // Verify methods are protected via Object.defineProperties
+    // configurable: false prevents deletion
+    // writable: false prevents reassignment
+    expect(Object.getOwnPropertyDescriptor(frozenMap, 'set')?.configurable).toBe(false);
+    expect(Object.getOwnPropertyDescriptor(frozenMap, 'set')?.writable).toBe(false);
+  });
 
-    // TypedArray should not be frozen (by design)
-    expect(Object.isFrozen(result.uint8)).toBe(false);
+  it('should freeze WeakMap and prevent mutations', () => {
+    const store = createStore();
 
-    // But the parent object should be frozen
-    expect(Object.isFrozen(result)).toBe(true);
+    const key1 = { id: 1 };
+    const key2 = { id: 2 };
+    const weakMap = new WeakMap<{ id: number }, string>([
+      [key1, 'value1'],
+      [key2, 'value2'],
+    ]);
+
+    const state$ = state(
+      { cache: weakMap },
+      {
+        debugLabel: 'weakMapState$',
+      },
+    );
+
+    const result = store.get(state$);
+
+    // Verify WeakMap mutations are prevented
     expect(() => {
-      (result as { uint8: Uint8Array; float32: Float32Array; newProp?: string }).newProp = 'test';
+      result.cache.set({ id: 3 }, 'value3');
+    }).toThrow();
+
+    expect(() => {
+      result.cache.delete(key1);
     }).toThrow();
   });
 
-  it('should handle nested TypedArray and DataView', () => {
+  it('should freeze WeakSet and prevent mutations', () => {
     const store = createStore();
-    const buffer = new ArrayBuffer(16);
-    const dataView = new DataView(buffer);
-    dataView.setInt32(0, 42);
 
-    const complexState$ = state({
-      metadata: { width: 100, height: 100 },
-      imageData: {
-        pixels: new Uint8ClampedArray([255, 0, 0, 255]),
+    const obj1 = { id: 1 };
+    const obj2 = { id: 2 };
+    const weakSet = new WeakSet<{ id: number }>([obj1, obj2]);
+
+    const state$ = state(
+      { refs: weakSet },
+      {
+        debugLabel: 'weakSetState$',
       },
-      binaryData: {
-        buffer,
-        view: dataView,
-      },
-    });
+    );
 
-    const result = store.get(complexState$);
+    const result = store.get(state$);
 
-    // TypedArray and DataView should be usable
-    expect(result.imageData.pixels[0]).toBe(255);
-    expect(result.binaryData.view.getInt32(0)).toBe(42);
-
-    // Parent objects should be frozen
+    // Verify WeakSet mutations are prevented
     expect(() => {
-      result.metadata.width = 200;
+      result.refs.add({ id: 3 });
     }).toThrow();
 
-    // TypedArray itself is not frozen
-    expect(Object.isFrozen(result.imageData.pixels)).toBe(false);
+    expect(() => {
+      result.refs.delete(obj1);
+    }).toThrow();
   });
 });

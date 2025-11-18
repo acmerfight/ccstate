@@ -12,6 +12,15 @@ import { withGeValInterceptor } from '../interceptor';
 import { canReadAsCompute } from '../typing-util';
 import { shouldDistinct, shouldDistinctError } from './signal';
 
+function createCircularDependencyError(computed$: Computed<unknown>): Error {
+  const debugLabel = computed$.debugLabel ?? 'anonymous';
+  return new Error(
+    `Circular dependency detected: computed '${debugLabel}' (id: ${String(computed$.id)}) ` +
+      `is already being evaluated. This typically occurs when a computed ` +
+      `directly or indirectly depends on itself.`,
+  );
+}
+
 function checkEpoch<T>(
   readComputed: ReadComputed,
   computedState: ComputedState<T>,
@@ -44,12 +53,7 @@ export function tryGetCached<T>(
 
   // Detect circular dependency early
   if (signalState.evaluating) {
-    const debugLabel = computed$.debugLabel ?? 'anonymous';
-    throw new Error(
-      `Circular dependency detected: computed '${debugLabel}' (id: ${String(computed$.id)}) ` +
-        `is already being evaluated. This typically occurs when a computed ` +
-        `directly or indirectly depends on itself.`,
-    );
+    throw createCircularDependencyError(computed$);
   }
 
   // If there's a cached error, always re-evaluate. Errors are often transient
@@ -161,12 +165,7 @@ export function evaluateComputed<T>(
 
   // Detect circular dependency
   if (computedState.evaluating) {
-    const debugLabel = computed$.debugLabel ?? 'anonymous';
-    throw new Error(
-      `Circular dependency detected: computed '${debugLabel}' (id: ${String(computed$.id)}) ` +
-        `is already being evaluated. This typically occurs when a computed ` +
-        `directly or indirectly depends on itself.`,
-    );
+    throw createCircularDependencyError(computed$);
   }
 
   // Mark as evaluating

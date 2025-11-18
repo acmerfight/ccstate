@@ -12,6 +12,15 @@ import { withGeValInterceptor } from '../interceptor';
 import { canReadAsCompute } from '../typing-util';
 import { shouldDistinct, shouldDistinctError } from './signal';
 
+function createCircularDependencyError(computed$: Computed<unknown>): Error {
+  const debugLabel = computed$.debugLabel ?? 'anonymous';
+  return new Error(
+    `Circular dependency detected: computed '${debugLabel}' (id: ${String(computed$.id)}) ` +
+      `is already being evaluated. This typically occurs when a computed ` +
+      `directly or indirectly depends on itself.`,
+  );
+}
+
 function checkEpoch<T>(
   readComputed: ReadComputed,
   computedState: ComputedState<T>,
@@ -39,6 +48,19 @@ export function tryGetCached<T>(
 ): ComputedState<T> | undefined {
   const signalState = context.stateMap.get(computed$) as ComputedState<T> | undefined;
   if (!signalState) {
+    return undefined;
+  }
+
+  // Detect circular dependency early
+  if (signalState.evaluating) {
+    throw createCircularDependencyError(computed$);
+  }
+
+  // If there's a cached error, always re-evaluate. Some errors are transient
+  // (e.g., network errors, temporary computation failures, etc.) and may succeed
+  // on retry. Note: Circular dependency errors are never cached here - they are
+  // thrown before reaching this point, allowing immediate recovery after fixing.
+  if (signalState.error !== undefined) {
     return undefined;
   }
 
@@ -143,48 +165,61 @@ export function evaluateComputed<T>(
 ): ComputedState<T> {
   const computedState = getOrInitComputedState(computed$, context);
 
-  const lastDeps = computedState.dependencies;
-
-  const [_get, dependencies] = wrapGet(readSignal, mount, computed$, computedState, context, mutation);
-  computedState.dependencies = dependencies;
-
-  let result: ComputedResult<T>;
-  try {
-    result = {
-      value: computed$.read(
-        function <U>(depAtom: Signal<U>) {
-          return withGeValInterceptor(() => _get(depAtom), depAtom, context.interceptor?.get);
-        },
-        {
-          get signal() {
-            computedState.abortController?.abort(`abort ${computed$.debugLabel ?? 'anonymous'} atom`);
-            computedState.abortController = new AbortController();
-            return computedState.abortController.signal;
-          },
-        },
-      ),
-    };
-  } catch (error) {
-    result = {
-      error,
-    };
+  // Detect circular dependency
+  if (computedState.evaluating) {
+    throw createCircularDependencyError(computed$);
   }
 
-  mutation?.potentialDirtyIds.delete(computed$.id);
+  // Mark as evaluating
+  computedState.evaluating = true;
 
-  cleanupMissingDependencies(unmount, computed$, lastDeps, dependencies, context, mutation);
+  try {
+    const lastDeps = computedState.dependencies;
 
-  if ('error' in result) {
-    if (!shouldDistinctError(computed$, context)) {
-      computedState.error = result.error;
-      delete computedState.val;
+    const [_get, dependencies] = wrapGet(readSignal, mount, computed$, computedState, context, mutation);
+    computedState.dependencies = dependencies;
+
+    let result: ComputedResult<T>;
+    try {
+      result = {
+        value: computed$.read(
+          function <U>(depAtom: Signal<U>) {
+            return withGeValInterceptor(() => _get(depAtom), depAtom, context.interceptor?.get);
+          },
+          {
+            get signal() {
+              computedState.abortController?.abort(`abort ${computed$.debugLabel ?? 'anonymous'} atom`);
+              computedState.abortController = new AbortController();
+              return computedState.abortController.signal;
+            },
+          },
+        ),
+      };
+    } catch (error) {
+      result = {
+        error,
+      };
+    }
+
+    mutation?.potentialDirtyIds.delete(computed$.id);
+
+    cleanupMissingDependencies(unmount, computed$, lastDeps, dependencies, context, mutation);
+
+    if ('error' in result) {
+      if (!shouldDistinctError(computed$, context)) {
+        computedState.error = result.error;
+        delete computedState.val;
+        computedState.epoch += 1;
+      }
+    } else if (!shouldDistinct(computed$, result.value, context)) {
+      computedState.val = result.value;
+      delete computedState.error;
       computedState.epoch += 1;
     }
-  } else if (!shouldDistinct(computed$, result.value, context)) {
-    computedState.val = result.value;
-    delete computedState.error;
-    computedState.epoch += 1;
-  }
 
-  return computedState;
+    return computedState;
+  } finally {
+    // Always clear the evaluating flag
+    computedState.evaluating = false;
+  }
 }

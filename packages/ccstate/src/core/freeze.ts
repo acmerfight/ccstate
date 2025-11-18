@@ -119,10 +119,7 @@ function createFrozenSet<T>(set: Set<T>, cache: WeakSet<object>): Set<T> {
  * WeakMap is less common in state management since keys must be objects
  * and entries are automatically garbage collected.
  */
-function createFrozenWeakMap<K extends object, V>(
-  weakMap: WeakMap<K, V>,
-  cache: WeakSet<object>,
-): WeakMap<K, V> {
+function createFrozenWeakMap<K extends object, V>(weakMap: WeakMap<K, V>): WeakMap<K, V> {
   // Cannot iterate WeakMap to freeze values (by design)
   // WeakMap keys are weakly held and automatically garbage collected
 
@@ -157,10 +154,7 @@ function createFrozenWeakMap<K extends object, V>(
  * WeakSet is less common in state management since values must be objects
  * and entries are automatically garbage collected.
  */
-function createFrozenWeakSet<T extends object>(
-  weakSet: WeakSet<T>,
-  cache: WeakSet<object>,
-): WeakSet<T> {
+function createFrozenWeakSet<T extends object>(weakSet: WeakSet<T>): WeakSet<T> {
   // Cannot iterate WeakSet to freeze values (by design)
   // WeakSet values are weakly held and automatically garbage collected
 
@@ -200,6 +194,14 @@ function shouldFreeze(value: unknown): value is object {
 
   // Skip primitive wrapper objects
   if (value instanceof Boolean || value instanceof Number || value instanceof String) {
+    return false;
+  }
+
+  // Skip TypedArray (Uint8Array, Float32Array, etc.)
+  // Rationale: TypedArray cannot be frozen with Object.freeze()
+  // Industry practice: Immer and Redux Toolkit skip TypedArray
+  // Reference: https://github.com/immerjs/immer/blob/main/src/utils/common.ts
+  if (ArrayBuffer.isView(value)) {
     return false;
   }
 
@@ -247,13 +249,13 @@ function deepFreezeImpl<T>(value: T, cache: WeakSet<object>): T {
   // Handle WeakMap: replace mutating methods
   // Note: Cannot freeze nested values since WeakMap is not iterable
   if (value instanceof WeakMap) {
-    return createFrozenWeakMap(value, cache) as T;
+    return createFrozenWeakMap(value) as T;
   }
 
   // Handle WeakSet: replace mutating methods
   // Note: Cannot freeze nested values since WeakSet is not iterable
   if (value instanceof WeakSet) {
-    return createFrozenWeakSet(value, cache) as T;
+    return createFrozenWeakSet(value) as T;
   }
 
   // Freeze the object itself

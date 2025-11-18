@@ -56,8 +56,10 @@ export function tryGetCached<T>(
     throw createCircularDependencyError(computed$);
   }
 
-  // If there's a cached error, always re-evaluate. Errors are often transient
-  // (e.g., circular dependencies that get fixed, network errors, etc.)
+  // If there's a cached error, always re-evaluate. Some errors are transient
+  // (e.g., network errors, temporary computation failures, etc.) and may succeed
+  // on retry. Note: Circular dependency errors are never cached here - they are
+  // thrown before reaching this point, allowing immediate recovery after fixing.
   if (signalState.error !== undefined) {
     return undefined;
   }

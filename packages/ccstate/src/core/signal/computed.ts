@@ -11,6 +11,7 @@ import type {
 import { withGeValInterceptor } from '../interceptor';
 import { canReadAsCompute } from '../typing-util';
 import { shouldDistinct, shouldDistinctError } from './signal';
+import { freezeValue } from '../freeze';
 
 function checkEpoch<T>(
   readComputed: ReadComputed,
@@ -89,7 +90,9 @@ function wrapGet<T>(
         throw depState.error;
       }
 
-      return depState.val;
+      // Freeze the value to prevent mutations inside computed
+      // This ensures computed remains effect-less
+      return freezeValue(depState.val);
     },
     readDeps,
   ];

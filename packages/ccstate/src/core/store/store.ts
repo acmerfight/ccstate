@@ -23,6 +23,7 @@ import { readState } from '../signal/state';
 import { canReadAsCompute } from '../typing-util';
 import { mount as innerMount, unmount } from './sub';
 import { computed } from '../signal/factory';
+import { freezeValue } from '../freeze';
 
 const readComputed: ReadComputed = <T>(
   computed$: Computed<T>,
@@ -63,7 +64,9 @@ const storeGet: StoreGet = (signal, context, mutation) => {
         throw signalState.error as Error;
       }
 
-      return signalState.val;
+      // Freeze the value to prevent accidental mutations
+      // This enforces immutability and aligns with CCState's effect-less philosophy
+      return freezeValue(signalState.val);
     },
     signal,
     context.interceptor?.get,

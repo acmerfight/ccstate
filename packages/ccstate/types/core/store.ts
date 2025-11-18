@@ -63,6 +63,7 @@ export type ComputedState<T> =
       dependencies: Map<Signal<unknown>, number>;
       epoch: number;
       abortController?: AbortController;
+      evaluating?: boolean;
     }
   | {
       mounted?: Mounted;
@@ -71,6 +72,7 @@ export type ComputedState<T> =
       dependencies: Map<Signal<unknown>, number>;
       epoch: number;
       abortController?: AbortController;
+      evaluating?: boolean;
     };
 
 export type SignalState<T> = StateState<T> | ComputedState<T>;
